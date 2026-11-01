@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Professional real-time network packet analysis dashboard with advanced visualizations, security monitoring, and comprehensive filtering capabilities.">
+    <meta name="keywords" content="network monitoring, packet analysis, cybersecurity, network security, real-time monitoring">
+    <meta name="author" content="NetCap Dashboard">
+    <title>NetCap Dashboard - Professional Network Packet Analysis</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            color: #e0e0e0;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+        
+        /* Custom Scrollbars */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #475569, #64748b);
+            border-radius: 4px;
+            border: 1px solid #334155;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #64748b, #94a3b8);
+        }
+        
+        /* Status Indicators */
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-connecting { background: #f59e0b; animation: pulse 2s infinite; }
+        .status-live { background: #22c55e; animation: pulse 2s infinite; }
+        .status-failed { background: #ef4444; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+        }
+        
+        /* Protocol Colors */
+        .protocol-tcp { background: linear-gradient(135deg, #1d4ed8, #3b82f6); }
+        .protocol-udp { background: linear-gradient(135deg, #9333ea, #a855f7); }
+        .protocol-icmp { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .protocol-http { background: linear-gradient(135deg, #16a34a, #22c55e); }
+        .protocol-https { background: linear-gradient(135deg, #059669, #10b981); }
+        .protocol-dns { background: linear-gradient(135deg, #be185d, #e11d48); }
+        .protocol-tls { background: linear-gradient(135deg, #7c3aed, #8b5cf6); }
+        .protocol-quic { background: linear-gradient(135deg, #0891b2, #06b6d4); }
+        .protocol-other { background: linear-gradient(135deg, #475569, #64748b); }
+        
+        /* Card Animations */
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Filter Animations */
+        .filter-active {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            transform: scale(1.05);
+        }
+        
+        /* Table Row Animations */
+        .table-row-enter {
+            animation: slideInFromTop 0.3s ease-out;
+        }
+        
+        @keyframes slideInFromTop {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Gradient Backgrounds */
+        .gradient-bg-1 { background: linear-gradient(135deg, #1e293b, #334155); }
+        .gradient-bg-2 { background: linear-gradient(135deg, #374151, #4b5563); }
+        .gradient-bg-3 { background: linear-gradient(135deg, #1f2937, #374151); }
+        
+        /* Production Optimizations */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 1.5rem;
+            align-items: start;
+        }
+        
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        
+        /* Performance Optimizations */
+        .packet-table {
+            contain: layout style paint;
+            will-change: scroll-position;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 280px;
+            width: 100%;
+            contain: layout style paint;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 1280px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+            .mobile-hide { display: none !important; }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 640px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Loading States */
+        .loading-skeleton {
+            background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+        
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* Loading Animation */
+        .loading-spinner {
+            border: 3px solid #374151;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        /* Tooltip Styles */
+        .tooltip {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .mobile-hide { display: none; }
+            .mobile-full { width: 100%; }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Navigation Header -->
+    <nav class="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-network-wired text-blue-400 text-2xl"></i>
+                        <h1 class="text-xl font-bold text-white">NetVisor Dashboard</h1>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div id="status-dot" class="status-dot status-connecting"></div>
+                        <span id="status-text" class="text-sm font-medium text-yellow-400">Connecting...</span>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <!-- Controls -->
+                    <button id="pause-btn" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors">
+                        <i class="fas fa-pause mr-1"></i> Pause
+                    </button>
+                    <button id="clear-btn" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors">
+                        <i class="fas fa-trash mr-1"></i> Clear
+                    </button>
+                    <button id="export-btn" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition-colors">
+                        <i class="fas fa-download mr-1"></i> Export
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-4 md:p-6 space-y-6">
+
+        <!-- Stats Cards -->
+        <div class="stats-grid mb-6">
+            <div class="gradient-bg-1 p-6 rounded-xl shadow-lg card-hover border border-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-300">Total Packets</h3>
+                        <p id="total-packets" class="text-2xl font-bold text-white mt-1">0</p>
+                    </div>
+                    <i class="fas fa-layer-group text-blue-400 text-2xl"></i>
+                </div>
+            </div>
+            
+            <div class="gradient-bg-2 p-6 rounded-xl shadow-lg card-hover border border-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-300">Packets/Sec</h3>
+                        <p id="packets-per-sec" class="text-2xl font-bold text-white mt-1">0</p>
+                    </div>
+                    <i class="fas fa-tachometer-alt text-green-400 text-2xl"></i>
+                </div>
+            </div>
+            
+            <div class="gradient-bg-3 p-6 rounded-xl shadow-lg card-hover border border-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-300">Data Volume</h3>
+                        <p id="data-transferred" class="text-2xl font-bold text-white mt-1">0 KB</p>
+                    </div>
+                    <i class="fas fa-database text-purple-400 text-2xl"></i>
+                </div>
+            </div>
+            
+            <div class="gradient-bg-1 p-6 rounded-xl shadow-lg card-hover border border-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-300">Uptime</h3>
+                        <p id="capture-time" class="text-2xl font-bold text-white mt-1">0s</p>
+                    </div>
+                    <i class="fas fa-clock text-yellow-400 text-2xl"></i>
+                </div>
+            </div>
+            
+            <div class="gradient-bg-2 p-6 rounded-xl shadow-lg card-hover border border-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-300">Unique IPs</h3>
+                        <p id="unique-ips" class="text-2xl font-bold text-white mt-1">0</p>
+                    </div>
+                    <i class="fas fa-globe text-cyan-400 text-2xl"></i>
+                </div>
+            </div>
+            
+            <div class="gradient-bg-3 p-6 rounded-xl shadow-lg card-hover border border-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-300">Top Protocol</h3>
+                        <p id="top-protocol" class="text-2xl font-bold text-white mt-1">-</p>
+                    </div>
+                    <i class="fas fa-chart-line text-orange-400 text-2xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Controls -->
+        <div class="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl border border-slate-600">
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="flex items-center space-x-2">
+                    <label class="text-sm font-medium text-slate-300">Protocol Filter:</label>
+                    <div class="flex flex-wrap gap-2" id="protocol-filters">
+                        <button class="filter-btn px-3 py-1 text-xs rounded-full border border-slate-500 text-slate-300 hover:bg-slate-600 transition-all" data-protocol="all">All</button>
+                        <button class="filter-btn px-3 py-1 text-xs rounded-full border border-blue-500 text-blue-300 hover:bg-blue-600 transition-all" data-protocol="tcp">TCP</button>
+                        <button class="filter-btn px-3 py-1 text-xs rounded-full border border-purple-500 text-purple-300 hover:bg-purple-600 transition-all" data-protocol="udp">UDP</button>
+                        <button class="filter-btn px-3 py-1 text-xs rounded-full border border-green-500 text-green-300 hover:bg-green-600 transition-all" data-protocol="http">HTTP</button>
+                        <button class="filter-btn px-3 py-1 text-xs rounded-full border border-pink-500 text-pink-300 hover:bg-pink-600 transition-all" data-protocol="dns">DNS</button>
+                        <button class="filter-btn px-3 py-1 text-xs rounded-full border border-yellow-500 text-yellow-300 hover:bg-yellow-600 transition-all" data-protocol="icmp">ICMP</button>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-2">
+                    <label class="text-sm font-medium text-slate-300">Search:</label>
+                    <input type="text" id="search-input" placeholder="IP, port, or content..." 
+                           class="px-3 py-1 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 transition-colors">
+                </div>
+                
+                <div class="flex items-center space-x-2">
+                    <label class="text-sm font-medium text-slate-300">Auto-scroll:</label>
+                    <input type="checkbox" id="auto-scroll" checked class="rounded text-blue-600 focus:ring-blue-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class="main-grid mb-6">
+            <!-- Packet Stream Table -->
+            <div class="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-600 overflow-hidden">
+                <div class="p-4 border-b border-slate-600 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white flex items-center">
+                        <i class="fas fa-stream mr-2 text-blue-400"></i>
+                        Live Packet Stream
+                    </h2>
+                    <div class="flex items-center space-x-2 text-sm text-slate-400">
+                        <span>Showing: <span id="visible-packets">0</span> packets</span>
+                        <span class="mx-2">|</span>
+                        <span>Buffer: <span id="buffer-size">100</span></span>
+                    </div>
+                </div>
+                
+                <div class="custom-scrollbar overflow-auto h-[500px] packet-table">
+                    <table class="w-full text-sm">
+                        <thead class="sticky top-0 bg-slate-800/95 backdrop-blur-sm">
+                            <tr class="border-b border-slate-600">
+                                <th class="p-3 text-left text-slate-300 font-medium">#</th>
+                                <th class="p-3 text-left text-slate-300 font-medium">Time</th>
+                                <th class="p-3 text-left text-slate-300 font-medium mobile-hide">Source</th>
+                                <th class="p-3 text-left text-slate-300 font-medium mobile-hide">Destination</th>
+                                <th class="p-3 text-left text-slate-300 font-medium">Protocol</th>
+                                <th class="p-3 text-left text-slate-300 font-medium mobile-hide">Length</th>
+                                <th class="p-3 text-left text-slate-300 font-medium">Info</th>
+                            </tr>
+                        </thead>
+                        <tbody id="packet-table-body" class="divide-y divide-slate-700/50">
+                            <!-- Packets will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Sidebar - Charts and Analytics -->
+            <div class="space-y-6">
+                <!-- Protocol Distribution -->
+                <div class="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl border border-slate-600">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-chart-pie mr-2 text-purple-400"></i>
+                        Protocols
+                    </h3>
+                    <div class="chart-container">
+                        <canvas id="protocolChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Traffic Timeline -->
+                <div class="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl border border-slate-600">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-chart-line mr-2 text-green-400"></i>
+                        Traffic Timeline
+                    </h3>
+                    <div class="chart-container">
+                        <canvas id="trafficChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Top Sources -->
+                <div class="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl border border-slate-600">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-list-ol mr-2 text-cyan-400"></i>
+                        Top Sources
+                    </h3>
+                    <div id="top-sources" class="space-y-2">
+                        <!-- Top sources will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Security Alerts -->
+                <div class="bg-slate-800/50 backdrop-blur-sm p-4 rounded-xl border border-slate-600">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-shield-alt mr-2 text-red-400"></i>
+                        Alerts
+                    </h3>
+                    <div id="security-alerts" class="space-y-2">
+                        <div class="text-sm text-slate-400 text-center py-4">
+                            No alerts detected
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional Analytics Row -->
+        <div class="analytics-grid">
+            <!-- Bandwidth Usage -->
+            <div class="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl border border-slate-600">
+                <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                    <i class="fas fa-wifi mr-2 text-blue-400"></i>
+                    Bandwidth Usage
+                </h3>
+                <div class="chart-container">
+                    <canvas id="bandwidthChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Port Activity -->
+            <div class="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl border border-slate-600">
+                <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                    <i class="fas fa-door-open mr-2 text-orange-400"></i>
+                    Port Activity
+                </h3>
+                <div class="chart-container">
+                    <canvas id="portChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // === GLOBAL STATE MANAGEMENT ===
+        class NetCapDashboard {
+            constructor() {
+                this.initializeElements();
+                this.initializeState();
+                this.initializeCharts();
+                this.initializeEventListeners();
+                this.startWebSocketConnection();
+            }
+
+            initializeElements() {
+                // Main elements
+                this.packetTableBody = document.getElementById('packet-table-body');
+                this.statusDot = document.getElementById('status-dot');
+                this.statusText = document.getElementById('status-text');
+                
+                // Stats elements
+                this.totalPacketsEl = document.getElementById('total-packets');
+                this.ppsEl = document.getElementById('packets-per-sec');
+                this.dataTransferredEl = document.getElementById('data-transferred');
+                this.captureTimeEl = document.getElementById('capture-time');
+                this.uniqueIpsEl = document.getElementById('unique-ips');
+                this.topProtocolEl = document.getElementById('top-protocol');
+                this.visiblePacketsEl = document.getElementById('visible-packets');
+                
+                // Control elements
+                this.pauseBtn = document.getElementById('pause-btn');
+                this.clearBtn = document.getElementById('clear-btn');
+                this.exportBtn = document.getElementById('export-btn');
+                this.searchInput = document.getElementById('search-input');
+                this.autoScrollCheckbox = document.getElementById('auto-scroll');
+                
+                // Filter elements
+                this.protocolFilters = document.querySelectorAll('.filter-btn');
+                
+                // Chart canvases
+                this.protocolChartCanvas = document.getElementById('protocolChart');
+                this.trafficChartCanvas = document.getElementById('trafficChart');
+                this.bandwidthChartCanvas = document.getElementById('bandwidthChart');
+                this.portChartCanvas = document.getElementById('portChart');
+                
+                // Other elements
+                this.topSourcesEl = document.getElementById('top-sources');
+                this.securityAlertsEl = document.getElementById('security-alerts');
+            }
+
+            initializeState() {
+                // Core state
+                this.packetCounter = 0;
+                this.totalBytes = 0;
+                this.startTime = 0;
+                this.isPaused = false;
+                this.socket = null;
+                this.chartsEnabled = true;
+                
+                // Packet management
+                this.packets = [];
+                this.filteredPackets = [];
+                this.MAX_PACKETS = 1000;
+                this.MAX_DISPLAY_PACKETS = 100;
+                
+                // Analytics data
+                this.protocolCounts = {};
+                this.ipCounts = {};
+                this.portCounts = {};
+                this.trafficHistory = [];
+                this.bandwidthHistory = [];
+                this.packetsPerSecond = 0;
+                this.currentFilter = 'all';
+                this.searchTerm = '';
+                
+                // Time tracking
+                this.lastSecondPackets = 0;
+                this.lastUpdateTime = Date.now();
+                
+                // Security monitoring
+                this.securityAlerts = [];
+                this.suspiciousIPs = new Set();
+                
+                // Performance tracking
+                this.lastRenderTime = Date.now();
+                this.renderThrottle = 100; // ms
+            }
+
+            initializeCharts() {
+                try {
+                    // Protocol Distribution Chart
+                    this.protocolChart = new Chart(this.protocolChartCanvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            backgroundColor: [
+                                '#3b82f6', '#a855f7', '#22c55e', '#f59e0b', 
+                                '#ef4444', '#06b6d4', '#8b5cf6', '#64748b'
+                            ],
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    color: '#cbd5e1',
+                                    font: { size: 11 },
+                                    padding: 10,
+                                    usePointStyle: true
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Traffic Timeline Chart
+                this.trafficChart = new Chart(this.trafficChartCanvas, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Packets/sec',
+                            data: [],
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                display: false
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 10 }
+                                },
+                                grid: {
+                                    color: 'rgba(148, 163, 184, 0.1)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+
+                // Bandwidth Chart
+                this.bandwidthChart = new Chart(this.bandwidthChartCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Bandwidth (KB/s)',
+                            data: [],
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                            borderColor: '#3b82f6',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                display: false
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 10 }
+                                },
+                                grid: {
+                                    color: 'rgba(148, 163, 184, 0.1)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+
+                // Port Activity Chart
+                this.portChart = new Chart(this.portChartCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Connections',
+                            data: [],
+                            backgroundColor: 'rgba(249, 115, 22, 0.8)',
+                            borderColor: '#f97316',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 10 }
+                                },
+                                grid: {
+                                    color: 'rgba(148, 163, 184, 0.1)'
+                                }
+                            },
+                            y: {
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 10 }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+                
+                } catch (error) {
+                    // Continue without charts if there's an error
+                    this.chartsEnabled = false;
+                }
+            }
+
+            initializeEventListeners() {
+                // Control buttons
+                this.pauseBtn.addEventListener('click', () => this.togglePause());
+                this.clearBtn.addEventListener('click', () => this.clearData());
+                this.exportBtn.addEventListener('click', () => this.exportData());
+                
+                // Search functionality
+                this.searchInput.addEventListener('input', (e) => {
+                    this.searchTerm = e.target.value.toLowerCase();
+                    this.applyFilters();
+                });
+                
+                // Protocol filters
+                this.protocolFilters.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        this.setProtocolFilter(e.target.dataset.protocol);
+                    });
+                });
+                
+                // Auto-scroll toggle
+                this.autoScrollCheckbox.addEventListener('change', (e) => {
+                    this.autoScroll = e.target.checked;
+                });
+                
+                // Update stats every second
+                setInterval(() => this.updatePeriodicStats(), 1000);
+                
+                // Update charts every 2 seconds
+                setInterval(() => this.updateCharts(), 2000);
+            }
+
+            startWebSocketConnection() {
+                const hostname = window.location.hostname || 'localhost';
+                const wsUrl = `ws://${hostname}:8765`;
+                
+                this.socket = new WebSocket(wsUrl);
+                
+                this.socket.onopen = (e) => {
+                    this.updateConnectionStatus('live', 'Live Feed Active');
+                    this.startTime = Date.now();
+                };
+                
+                this.socket.onmessage = (event) => {
+                    if (!this.isPaused) {
+                        this.processPacketData(event.data);
+                    }
+                };
+                
+                this.socket.onclose = (event) => {
+                    this.updateConnectionStatus('failed', 'Connection Closed');
+                    // Auto-reconnect after 5 seconds
+                    setTimeout(() => this.startWebSocketConnection(), 5000);
+                };
+                
+                this.socket.onerror = (error) => {
+                    this.updateConnectionStatus('failed', 'Connection Failed');
+                };
+            }
+
+            processPacketData(rawData) {
+                try {
+                    const packetData = JSON.parse(rawData);
+                    
+                    // Transform packet data
+                    const packet = {
+                        id: ++this.packetCounter,
+                        timestamp: Date.now(),
+                        time: this.formatTime(Date.now() - this.startTime),
+                        src_ip: packetData.src_ip || packetData.source || 'Unknown',
+                        dest_ip: packetData.dest_ip || packetData.destination || 'Unknown',
+                        protocol: (packetData.protocol || 'Other').toUpperCase(),
+                        length: packetData.length || 0,
+                        info: packetData.info || 'No info available',
+                        raw: packetData
+                    };
+                    
+                    // Add to packets array
+                    this.packets.unshift(packet);
+                    
+                    // Limit packet history
+                    if (this.packets.length > this.MAX_PACKETS) {
+                        this.packets = this.packets.slice(0, this.MAX_PACKETS);
+                    }
+                    
+                    // Update analytics
+                    this.updateAnalytics(packet);
+                    
+                    // Apply filters and update display
+                    this.applyFilters();
+                    
+                    // Security monitoring
+                    this.checkSecurity(packet);
+                    
+                } catch (error) {
+                    // Silently handle malformed packets in production
+                    return;
+                }
+            }
+
+            updateAnalytics(packet) {
+                // Protocol counts
+                this.protocolCounts[packet.protocol] = (this.protocolCounts[packet.protocol] || 0) + 1;
+                
+                // IP counts
+                this.ipCounts[packet.src_ip] = (this.ipCounts[packet.src_ip] || 0) + 1;
+                this.ipCounts[packet.dest_ip] = (this.ipCounts[packet.dest_ip] || 0) + 1;
+                
+                // Port extraction and counting
+                if (packet.raw.source_port) {
+                    this.portCounts[packet.raw.source_port] = (this.portCounts[packet.raw.source_port] || 0) + 1;
+                }
+                if (packet.raw.destination_port) {
+                    this.portCounts[packet.raw.destination_port] = (this.portCounts[packet.raw.destination_port] || 0) + 1;
+                }
+                
+                // Bandwidth tracking
+                this.totalBytes += packet.length;
+                this.lastSecondPackets++;
+                
+                // Traffic history for timeline
+                const now = Date.now();
+                if (now - this.lastUpdateTime >= 1000) {
+                    this.trafficHistory.push({
+                        time: now,
+                        packets: this.lastSecondPackets,
+                        bytes: this.totalBytes
+                    });
+                    
+                    // Keep only last 60 seconds
+                    if (this.trafficHistory.length > 60) {
+                        this.trafficHistory.shift();
+                    }
+                    
+                    this.lastUpdateTime = now;
+                }
+            }
+
+            checkSecurity(packet) {
+                // Simple security checks
+                const alerts = [];
+                
+                // Check for suspicious port activity
+                const suspiciousPorts = [23, 135, 139, 445, 1433, 3389];
+                if (packet.raw.destination_port && suspiciousPorts.includes(parseInt(packet.raw.destination_port))) {
+                    alerts.push({
+                        type: 'warning',
+                        message: `Suspicious port activity: ${packet.raw.destination_port}`,
+                        packet: packet
+                    });
+                }
+                
+                // Check for high frequency from single IP
+                if (this.ipCounts[packet.src_ip] > 100) {
+                    if (!this.suspiciousIPs.has(packet.src_ip)) {
+                        this.suspiciousIPs.add(packet.src_ip);
+                        alerts.push({
+                            type: 'danger',
+                            message: `High traffic from IP: ${packet.src_ip}`,
+                            packet: packet
+                        });
+                    }
+                }
+                
+                // Add alerts to the list
+                alerts.forEach(alert => {
+                    this.securityAlerts.unshift(alert);
+                    if (this.securityAlerts.length > 10) {
+                        this.securityAlerts.pop();
+                    }
+                });
+                
+                if (alerts.length > 0) {
+                    this.updateSecurityAlerts();
+                }
+            }
+
+            applyFilters() {
+                // Throttle rendering for performance
+                const now = Date.now();
+                if (now - this.lastRenderTime < this.renderThrottle) {
+                    return;
+                }
+                this.lastRenderTime = now;
+                
+                let filtered = this.packets;
+                
+                // Protocol filter
+                if (this.currentFilter !== 'all') {
+                    filtered = filtered.filter(packet => 
+                        packet.protocol.toLowerCase() === this.currentFilter.toLowerCase()
+                    );
+                }
+                
+                // Search filter
+                if (this.searchTerm) {
+                    const searchLower = this.searchTerm.toLowerCase();
+                    filtered = filtered.filter(packet =>
+                        packet.src_ip.toLowerCase().includes(searchLower) ||
+                        packet.dest_ip.toLowerCase().includes(searchLower) ||
+                        packet.protocol.toLowerCase().includes(searchLower) ||
+                        packet.info.toLowerCase().includes(searchLower) ||
+                        (packet.raw.source_port && packet.raw.source_port.toString().includes(searchLower)) ||
+                        (packet.raw.destination_port && packet.raw.destination_port.toString().includes(searchLower))
+                    );
+                }
+                
+                this.filteredPackets = filtered.slice(0, this.MAX_DISPLAY_PACKETS);
+                this.updatePacketTable();
+                this.updateVisiblePacketsCount();
+            }
+
+            updatePacketTable() {
+                const tbody = this.packetTableBody;
+                
+                // Use DocumentFragment for better performance
+                const fragment = document.createDocumentFragment();
+                
+                this.filteredPackets.forEach(packet => {
+                    const row = this.createPacketRow(packet);
+                    fragment.appendChild(row);
+                });
+                
+                // Clear and append all at once
+                tbody.innerHTML = '';
+                tbody.appendChild(fragment);
+                
+                // Auto-scroll to top if enabled
+                if (this.autoScrollCheckbox.checked && this.filteredPackets.length > 0) {
+                    tbody.parentElement.scrollTop = 0;
+                }
+            }
+
+            createPacketRow(packet) {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-700/50 transition-all duration-200 table-row-enter';
+                
+                const protocolClass = `protocol-${packet.protocol.toLowerCase()}`;
+                const protocolBadge = `<span class="px-2 py-1 text-xs font-medium rounded-full text-white ${protocolClass}">${packet.protocol}</span>`;
+                
+                row.innerHTML = `
+                    <td class="p-3 text-slate-400 font-mono text-xs">${packet.id}</td>
+                    <td class="p-3 text-slate-300 font-mono text-xs">${packet.time}</td>
+                    <td class="p-3 font-mono text-xs mobile-hide">${packet.src_ip}</td>
+                    <td class="p-3 font-mono text-xs mobile-hide">${packet.dest_ip}</td>
+                    <td class="p-3">${protocolBadge}</td>
+                    <td class="p-3 text-slate-400 text-xs mobile-hide">${this.formatBytes(packet.length)}</td>
+                    <td class="p-3 text-slate-300 text-xs truncate max-w-xs" title="${packet.info}">${packet.info}</td>
+                `;
+                
+                return row;
+            }
+
+            updatePeriodicStats() {
+                if (this.startTime === 0) return;
+                
+                // Update basic stats
+                this.totalPacketsEl.textContent = this.packetCounter.toLocaleString();
+                this.ppsEl.textContent = this.lastSecondPackets.toString();
+                this.dataTransferredEl.textContent = this.formatBytes(this.totalBytes);
+                this.captureTimeEl.textContent = this.formatDuration(Date.now() - this.startTime);
+                
+                // Update unique IPs
+                this.uniqueIpsEl.textContent = Object.keys(this.ipCounts).length.toString();
+                
+                // Update top protocol
+                const topProtocol = this.getTopProtocol();
+                this.topProtocolEl.textContent = topProtocol || '-';
+                
+                // Update performance info
+                const performanceEl = document.getElementById('performance-info');
+                if (performanceEl) {
+                    const pps = this.lastSecondPackets;
+                    const status = pps > 100 ? 'High Load' : pps > 50 ? 'Active' : 'Normal';
+                    performanceEl.textContent = status;
+                    performanceEl.className = pps > 100 ? 'text-red-400' : pps > 50 ? 'text-yellow-400' : 'text-green-400';
+                }
+                
+                // Reset per-second counter
+                this.lastSecondPackets = 0;
+                
+                // Update top sources
+                this.updateTopSources();
+            }
+
+            updateCharts() {
+                if (this.chartsEnabled === false) return;
+                
+                // Use requestAnimationFrame for smooth updates
+                requestAnimationFrame(() => {
+                    this.updateProtocolChart();
+                    this.updateTrafficChart();
+                    this.updateBandwidthChart();
+                    this.updatePortChart();
+                });
+            }
+
+            updateProtocolChart() {
+                const protocols = Object.keys(this.protocolCounts);
+                const counts = Object.values(this.protocolCounts);
+                
+                this.protocolChart.data.labels = protocols;
+                this.protocolChart.data.datasets[0].data = counts;
+                this.protocolChart.update('none');
+            }
+
+            updateTrafficChart() {
+                const labels = this.trafficHistory.map((_, i) => i);
+                const data = this.trafficHistory.map(h => h.packets);
+                
+                this.trafficChart.data.labels = labels;
+                this.trafficChart.data.datasets[0].data = data;
+                this.trafficChart.update('none');
+            }
+
+            updateBandwidthChart() {
+                const recentHistory = this.trafficHistory.slice(-10);
+                const labels = recentHistory.map((_, i) => `${i}s`);
+                const data = recentHistory.map(h => (h.bytes / 1024).toFixed(1));
+                
+                this.bandwidthChart.data.labels = labels;
+                this.bandwidthChart.data.datasets[0].data = data;
+                this.bandwidthChart.update('none');
+            }
+
+            updatePortChart() {
+                const topPorts = Object.entries(this.portCounts)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5);
+                
+                const labels = topPorts.map(([port]) => `Port ${port}`);
+                const data = topPorts.map(([,count]) => count);
+                
+                this.portChart.data.labels = labels;
+                this.portChart.data.datasets[0].data = data;
+                this.portChart.update('none');
+            }
+
+            updateTopSources() {
+                const topSources = Object.entries(this.ipCounts)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5);
+                
+                const html = topSources.map(([ip, count]) => `
+                    <div class="flex justify-between items-center p-2 bg-slate-700/30 rounded-lg">
+                        <span class="font-mono text-xs text-slate-300">${ip}</span>
+                        <span class="text-xs text-slate-400">${count}</span>
+                    </div>
+                `).join('');
+                
+                this.topSourcesEl.innerHTML = html || '<div class="text-sm text-slate-400 text-center py-4">No data yet</div>';
+            }
+
+            updateSecurityAlerts() {
+                const html = this.securityAlerts.map(alert => `
+                    <div class="p-2 rounded-lg border-l-4 ${alert.type === 'danger' ? 'border-red-500 bg-red-900/20' : 'border-yellow-500 bg-yellow-900/20'}">
+                        <div class="text-xs ${alert.type === 'danger' ? 'text-red-300' : 'text-yellow-300'}">${alert.message}</div>
+                        <div class="text-xs text-slate-400 mt-1">${alert.packet.src_ip} → ${alert.packet.dest_ip}</div>
+                    </div>
+                `).join('');
+                
+                this.securityAlertsEl.innerHTML = html || '<div class="text-sm text-slate-400 text-center py-4">No alerts detected</div>';
+            }
+
+            // === UTILITY METHODS ===
+            
+            setProtocolFilter(protocol) {
+                this.currentFilter = protocol;
+                
+                // Update filter button states
+                this.protocolFilters.forEach(btn => {
+                    btn.classList.remove('filter-active');
+                    if (btn.dataset.protocol === protocol) {
+                        btn.classList.add('filter-active');
+                    }
+                });
+                
+                this.applyFilters();
+            }
+
+            togglePause() {
+                this.isPaused = !this.isPaused;
+                this.pauseBtn.innerHTML = this.isPaused 
+                    ? '<i class="fas fa-play mr-1"></i> Resume'
+                    : '<i class="fas fa-pause mr-1"></i> Pause';
+                
+                this.updateConnectionStatus(
+                    this.isPaused ? 'failed' : 'live',
+                    this.isPaused ? 'Paused' : 'Live Feed Active'
+                );
+            }
+
+            clearData() {
+                if (confirm('Clear all packet data? This cannot be undone.')) {
+                    this.packets = [];
+                    this.filteredPackets = [];
+                    this.protocolCounts = {};
+                    this.ipCounts = {};
+                    this.portCounts = {};
+                    this.trafficHistory = [];
+                    this.securityAlerts = [];
+                    this.suspiciousIPs.clear();
+                    this.packetCounter = 0;
+                    this.totalBytes = 0;
+                    
+                    this.updatePacketTable();
+                    this.updateCharts();
+                    this.updateTopSources();
+                    this.updateSecurityAlerts();
+                }
+            }
+
+            exportData() {
+                const data = {
+                    packets: this.packets.slice(0, 1000), // Limit export size
+                    stats: {
+                        totalPackets: this.packetCounter,
+                        totalBytes: this.totalBytes,
+                        protocolCounts: this.protocolCounts,
+                        uniqueIPs: Object.keys(this.ipCounts).length,
+                        captureTime: Date.now() - this.startTime
+                    },
+                    exportTime: new Date().toISOString()
+                };
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `netcap-export-${new Date().toISOString().slice(0, 19)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            updateConnectionStatus(status, message) {
+                this.statusDot.className = `status-dot status-${status}`;
+                this.statusText.textContent = message;
+                this.statusText.className = `text-sm font-medium ${
+                    status === 'live' ? 'text-green-400' : 
+                    status === 'connecting' ? 'text-yellow-400' : 'text-red-400'
+                }`;
+            }
+
+            updateVisiblePacketsCount() {
+                this.visiblePacketsEl.textContent = this.filteredPackets.length.toString();
+            }
+
+            getTopProtocol() {
+                const entries = Object.entries(this.protocolCounts);
+                if (entries.length === 0) return null;
+                return entries.reduce((a, b) => a[1] > b[1] ? a : b)[0];
+            }
+
+            formatTime(ms) {
+                return (ms / 1000).toFixed(3) + 's';
+            }
+
+            formatDuration(ms) {
+                const seconds = Math.floor(ms / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                
+                if (hours > 0) {
+                    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+                } else if (minutes > 0) {
+                    return `${minutes}m ${seconds % 60}s`;
+                } else {
+                    return `${seconds}s`;
+                }
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+        }
+
+        // === INITIALIZATION ===
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                window.dashboard = new NetCapDashboard();
+            } catch (error) {
+                document.body.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center bg-slate-900">
+                        <div class="text-center text-white">
+                            <h1 class="text-2xl font-bold mb-4">Dashboard Error</h1>
+                            <p class="text-slate-400">Failed to initialize dashboard. Please refresh the page.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+    </script>
+
+    <!-- Footer -->
+    <footer class="mt-12 border-t border-slate-700 bg-slate-900/50 backdrop-blur-sm">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex flex-col md:flex-row justify-between items-center text-sm text-slate-400">
+                <div class="flex items-center space-x-4">
+                    <span>© 2024 NetCap Dashboard</span>
+                    <span class="hidden md:inline">|</span>
+                    <span>Professional Network Packet Analysis</span>
+                </div>
+                <div class="flex items-center space-x-4 mt-4 md:mt-0">
+                    <span>WebSocket: <span id="server-info">:8765</span></span>
+                    <span class="hidden md:inline">|</span>
+                    <span>Version: 2.0 Production</span>
+                    <span class="hidden md:inline">|</span>
+                    <span id="performance-info">Ready</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
+

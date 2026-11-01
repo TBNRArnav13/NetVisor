@@ -1,0 +1,10 @@
+# NetVisor - Requirements
+# Core Dependencies
+pyshark>=0.6.0
+websockets>=12.0.0
+psutil>=5.9.0
+python-dateutil>=2.8.2
+colorama>=0.4.6
+
+# Development and Testing (Optional)
+pytest>=7.0.0

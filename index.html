@@ -1,0 +1,1924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetVisor - Enterprise Network Analysis Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.26.0/plotly.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        /* Protocol Colors */
+        .protocol-tcp { background: linear-gradient(135deg, #f97316, #fb923c); }
+        .protocol-udp { background: linear-gradient(135deg, #9333ea, #a855f7); }
+        .protocol-icmp { background: linear-gradient(135deg, #dc2626, #ef4444); }
+        .protocol-http { background: linear-gradient(135deg, #16a34a, #22c55e); }
+        .protocol-https { background: linear-gradient(135deg, #059669, #10b981); }
+        .protocol-dns { background: linear-gradient(135deg, #9333ea, #a855f7); }
+        .protocol-ssh { background: linear-gradient(135deg, #0891b2, #06b6d4); }
+        .protocol-ftp { background: linear-gradient(135deg, #7c3aed, #8b5cf6); }
+        .protocol-smtp { background: linear-gradient(135deg, #be185d, #e11d48); }
+        .protocol-other { background: linear-gradient(135deg, #475569, #64748b); }
+        
+        /* Status Indicators */
+        .status-live { background: #22c55e; animation: pulse 2s infinite; }
+        .status-warning { background: #f59e0b; animation: pulse 2s infinite; }
+        .status-critical { background: #ef4444; animation: pulse 2s infinite; }
+        .status-offline { background: #64748b; }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        
+        /* Card Styles */
+        .glass-card {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .metric-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+        
+        /* Animations */
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+        
+        /* Loading States */
+        .loading { position: relative; overflow: hidden; }
+        .loading::after {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            animation: loading 1.5s infinite;
+        }
+        @keyframes loading { 0% { left: -100%; } 100% { left: 100%; } }
+    </style>
+</head><body
+>
+    <!-- Main Application Container -->
+    <div id="app" class="min-h-screen">
+        <!-- Navigation Header -->
+        <nav class="glass-card m-4 p-4 sticky top-4 z-50">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-6">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-shield-alt text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold text-white">NetVisor</h1>
+                            <p class="text-xs text-slate-400">Enterprise Network Analysis</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <div id="connection-status" class="w-3 h-3 rounded-full status-live"></div>
+                            <span id="connection-text" class="text-sm font-medium text-green-400">Live</span>
+                        </div>
+                        <div class="text-sm text-slate-400">
+                            <span id="current-time"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-3">
+                    <button id="settings-btn" class="p-2 hover:bg-slate-700 rounded-lg transition-colors">
+                        <i class="fas fa-cog text-slate-400"></i>
+                    </button>
+                    <button id="alerts-btn" class="p-2 hover:bg-slate-700 rounded-lg transition-colors relative">
+                        <i class="fas fa-bell text-slate-400"></i>
+                        <span id="alert-count" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center hidden">0</span>
+                    </button>
+                    <button id="export-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors">
+                        <i class="fas fa-download mr-2"></i>Export
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Dashboard Grid -->
+        <div class="px-4 pb-4 space-y-6">
+            <!-- Key Metrics Row -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                <div class="glass-card p-4 metric-card">
+                    <div class="flex items-center justify-between mb-2">
+                        <i class="fas fa-layer-group text-blue-400 text-xl"></i>
+                        <span id="packets-trend" class="text-xs text-green-400">↗ +12%</span>
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="total-packets">0</div>
+                    <div class="text-xs text-slate-400">Total Packets</div>
+                </div>
+                
+                <div class="glass-card p-4 metric-card">
+                    <div class="flex items-center justify-between mb-2">
+                        <i class="fas fa-tachometer-alt text-green-400 text-xl"></i>
+                        <span id="pps-trend" class="text-xs text-green-400">↗ +5%</span>
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="packets-per-sec">0</div>
+                    <div class="text-xs text-slate-400">Packets/Sec</div>
+                </div>
+                
+                <div class="glass-card p-4 metric-card">
+                    <div class="flex items-center justify-between mb-2">
+                        <i class="fas fa-database text-purple-400 text-xl"></i>
+                        <span id="data-trend" class="text-xs text-yellow-400">↗ +8%</span>
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="data-volume">0 KB</div>
+                    <div class="text-xs text-slate-400">Data Volume</div>
+                </div>
+                
+                <div class="glass-card p-4 metric-card">
+                    <div class="flex items-center justify-between mb-2">
+                        <i class="fas fa-globe text-cyan-400 text-xl"></i>
+                        <span id="ips-trend" class="text-xs text-green-400">↗ +3%</span>
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="unique-ips">0</div>
+                    <div class="text-xs text-slate-400">Unique IPs</div>
+                </div>
+                
+                <div class="glass-card p-4 metric-card">
+                    <div class="flex items-center justify-between mb-2">
+                        <i class="fas fa-shield-alt text-red-400 text-xl"></i>
+                        <span id="threats-trend" class="text-xs text-red-400">↗ +2</span>
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="threat-count">0</div>
+                    <div class="text-xs text-slate-400">Threats Detected</div>
+                </div>
+                
+                <div class="glass-card p-4 metric-card">
+                    <div class="flex items-center justify-between mb-2">
+                        <i class="fas fa-stopwatch text-yellow-400 text-xl"></i>
+                        <span id="latency-trend" class="text-xs text-green-400">↓ -2ms</span>
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="avg-latency">0ms</div>
+                    <div class="text-xs text-slate-400">Avg Latency</div>
+                </div>
+            </div>
+
+            <!-- Advanced Filters & Controls -->
+            <div class="glass-card p-6">
+                <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                    <i class="fas fa-filter mr-2 text-blue-400"></i>
+                    Advanced Filtering & Analysis Controls
+                </h3>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <!-- Protocol Filters -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Protocol Filter</label>
+                        <select id="protocol-filter" class="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <option value="all">All Protocols</option>
+                            <option value="tcp">TCP</option>
+                            <option value="udp">UDP</option>
+                            <option value="http">HTTP</option>
+                            <option value="https">HTTPS</option>
+                            <option value="dns">DNS</option>
+                            <option value="ssh">SSH</option>
+                            <option value="ftp">FTP</option>
+                            <option value="smtp">SMTP</option>
+                            <option value="icmp">ICMP</option>
+                        </select>
+                    </div>
+                    
+                    <!-- IP Range Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">IP Range Filter</label>
+                        <select id="ip-range-filter" class="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <option value="all">All IP Ranges</option>
+                            <option value="internal">Internal (192.168.x.x)</option>
+                            <option value="external">External IPs</option>
+                            <option value="private">Private Networks</option>
+                            <option value="public">Public IPs</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Port Range Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Port Range</label>
+                        <select id="port-filter" class="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <option value="all">All Ports</option>
+                            <option value="well-known">Well-Known (1-1023)</option>
+                            <option value="registered">Registered (1024-49151)</option>
+                            <option value="dynamic">Dynamic (49152-65535)</option>
+                            <option value="web">Web Ports (80,443,8080)</option>
+                            <option value="mail">Mail Ports (25,110,143,993,995)</option>
+                            <option value="database">Database Ports (3306,5432,1521)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Threat Level Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Threat Level</label>
+                        <select id="threat-filter" class="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <option value="all">All Levels</option>
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                            <option value="info">Informational</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+                    <!-- Search -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Search</label>
+                        <div class="relative">
+                            <input type="text" id="search-input" placeholder="IP, domain, port, or content..." 
+                                   class="w-full p-2 pl-8 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <i class="fas fa-search absolute left-2 top-2.5 text-slate-400 text-sm"></i>
+                        </div>
+                    </div>
+                    
+                    <!-- Time Range -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Time Range</label>
+                        <select id="time-range" class="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <option value="live">Live (Real-time)</option>
+                            <option value="1m">Last 1 Minute</option>
+                            <option value="5m">Last 5 Minutes</option>
+                            <option value="15m">Last 15 Minutes</option>
+                            <option value="1h">Last 1 Hour</option>
+                            <option value="24h">Last 24 Hours</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Packet Size Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Packet Size</label>
+                        <select id="size-filter" class="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+                            <option value="all">All Sizes</option>
+                            <option value="small">Small (< 100 bytes)</option>
+                            <option value="medium">Medium (100-1500 bytes)</option>
+                            <option value="large">Large (> 1500 bytes)</option>
+                            <option value="jumbo">Jumbo (> 9000 bytes)</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex items-center justify-between mt-6">
+                    <div class="flex items-center space-x-4">
+                        <button id="apply-filters" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors">
+                            <i class="fas fa-filter mr-2"></i>Apply Filters
+                        </button>
+                        <button id="clear-filters" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm transition-colors">
+                            <i class="fas fa-times mr-2"></i>Clear All
+                        </button>
+                        <button id="save-preset" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors">
+                            <i class="fas fa-save mr-2"></i>Save Preset
+                        </button>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2">
+                        <label class="text-sm text-slate-300">Auto-refresh:</label>
+                        <input type="checkbox" id="auto-refresh" checked class="rounded">
+                        <span class="text-sm text-slate-400">Every 2s</span>
+                    </div>
+                </div>
+            </div>          
+  <!-- Main Content Grid -->
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <!-- Live Packet Stream (2/3 width) -->
+                <div class="xl:col-span-2">
+                    <div class="glass-card p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-semibold text-white flex items-center">
+                                <i class="fas fa-stream mr-2 text-blue-400"></i>
+                                Live Packet Stream
+                            </h3>
+                            <div class="flex items-center space-x-4 text-sm text-slate-400">
+                                <span>Showing: <span id="visible-packets" class="text-white font-medium">0</span> packets</span>
+                                <span>|</span>
+                                <span>Buffer: <span id="buffer-size" class="text-white font-medium">1000</span></span>
+                                <button id="pause-stream" class="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white rounded text-xs">
+                                    <i class="fas fa-pause mr-1"></i>Pause
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-auto h-96 border border-slate-600 rounded-lg">
+                            <table class="w-full text-sm">
+                                <thead class="sticky top-0 bg-slate-800 border-b border-slate-600">
+                                    <tr>
+                                        <th class="p-3 text-left text-slate-300 font-medium cursor-pointer hover:text-white" data-sort="id">
+                                            # <i class="fas fa-sort text-xs ml-1"></i>
+                                        </th>
+                                        <th class="p-3 text-left text-slate-300 font-medium cursor-pointer hover:text-white" data-sort="time">
+                                            Time <i class="fas fa-sort text-xs ml-1"></i>
+                                        </th>
+                                        <th class="p-3 text-left text-slate-300 font-medium cursor-pointer hover:text-white" data-sort="source">
+                                            Source <i class="fas fa-sort text-xs ml-1"></i>
+                                        </th>
+                                        <th class="p-3 text-left text-slate-300 font-medium cursor-pointer hover:text-white" data-sort="destination">
+                                            Destination <i class="fas fa-sort text-xs ml-1"></i>
+                                        </th>
+                                        <th class="p-3 text-left text-slate-300 font-medium cursor-pointer hover:text-white" data-sort="protocol">
+                                            Protocol <i class="fas fa-sort text-xs ml-1"></i>
+                                        </th>
+                                        <th class="p-3 text-left text-slate-300 font-medium cursor-pointer hover:text-white" data-sort="length">
+                                            Length <i class="fas fa-sort text-xs ml-1"></i>
+                                        </th>
+                                        <th class="p-3 text-left text-slate-300 font-medium">Info</th>
+                                        <th class="p-3 text-left text-slate-300 font-medium">Risk</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="packet-table-body" class="divide-y divide-slate-700">
+                                    <!-- Packets will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Sidebar (1/3 width) -->
+                <div class="space-y-6">
+                    <!-- Protocol Distribution -->
+                    <div class="glass-card p-4">
+                        <h4 class="text-md font-semibold text-white mb-3 flex items-center">
+                            <i class="fas fa-chart-pie mr-2 text-purple-400"></i>
+                            Protocol Distribution
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="protocol-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Security Alerts -->
+                    <div class="glass-card p-4">
+                        <h4 class="text-md font-semibold text-white mb-3 flex items-center">
+                            <i class="fas fa-shield-alt mr-2 text-red-400"></i>
+                            Security Alerts
+                        </h4>
+                        <div id="security-alerts" class="space-y-2 h-48 overflow-y-auto">
+                            <!-- Alerts will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- Top Talkers -->
+                    <div class="glass-card p-4">
+                        <h4 class="text-md font-semibold text-white mb-3 flex items-center">
+                            <i class="fas fa-users mr-2 text-cyan-400"></i>
+                            Top Talkers
+                        </h4>
+                        <div id="top-talkers" class="space-y-2">
+                            <!-- Top talkers will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Analytics Section -->
+            <div class="space-y-6">
+                <h2 class="text-xl font-bold text-white flex items-center">
+                    <i class="fas fa-chart-line mr-3 text-blue-400"></i>
+                    Advanced Network Analytics
+                </h2>
+
+                <!-- Network Performance Dashboard -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <!-- Traffic Timeline -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-chart-line mr-2 text-green-400"></i>
+                            Traffic Timeline
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="traffic-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Bandwidth Utilization -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-wifi mr-2 text-blue-400"></i>
+                            Bandwidth Utilization
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="bandwidth-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Latency Analysis -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-stopwatch mr-2 text-yellow-400"></i>
+                            Latency Analysis
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="latency-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Network Topology & Security Analysis -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Network Topology -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-project-diagram mr-2 text-indigo-400"></i>
+                            Network Topology
+                        </h4>
+                        <div id="network-topology" class="h-80 border border-slate-600 rounded-lg"></div>
+                    </div>
+
+                    <!-- Threat Intelligence -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-brain mr-2 text-pink-400"></i>
+                            Threat Intelligence
+                        </h4>
+                        <div class="h-80">
+                            <canvas id="threat-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Analysis Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Port Analysis -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-door-open mr-2 text-orange-400"></i>
+                            Port Activity
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="port-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Geographic Distribution -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-globe-americas mr-2 text-teal-400"></i>
+                            Geographic Distribution
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="geo-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Packet Size Analysis -->
+                    <div class="glass-card p-6">
+                        <h4 class="text-md font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-chart-bar mr-2 text-purple-400"></i>
+                            Packet Size Distribution
+                        </h4>
+                        <div class="h-64">
+                            <canvas id="packet-size-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Real-time Monitoring Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl font-bold text-green-400 mb-2" id="uptime-metric">99.9%</div>
+                        <div class="text-sm text-slate-400">Network Uptime</div>
+                        <div class="w-full bg-slate-700 rounded-full h-2 mt-2">
+                            <div class="bg-green-400 h-2 rounded-full" style="width: 99.9%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl font-bold text-blue-400 mb-2" id="throughput-metric">1.2 Gbps</div>
+                        <div class="text-sm text-slate-400">Current Throughput</div>
+                        <div class="w-full bg-slate-700 rounded-full h-2 mt-2">
+                            <div class="bg-blue-400 h-2 rounded-full" style="width: 75%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl font-bold text-yellow-400 mb-2" id="error-rate-metric">0.01%</div>
+                        <div class="text-sm text-slate-400">Error Rate</div>
+                        <div class="w-full bg-slate-700 rounded-full h-2 mt-2">
+                            <div class="bg-yellow-400 h-2 rounded-full" style="width: 1%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl font-bold text-purple-400 mb-2" id="connections-metric">1,247</div>
+                        <div class="text-sm text-slate-400">Active Connections</div>
+                        <div class="w-full bg-slate-700 rounded-full h-2 mt-2">
+                            <div class="bg-purple-400 h-2 rounded-full" style="width: 60%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div> 
+   <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+        <div class="glass-card p-6 w-full max-w-2xl mx-4">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold text-white">Settings & Configuration</h3>
+                <button id="close-settings" class="text-slate-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h4 class="text-md font-semibold text-white mb-3">Capture Settings</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm text-slate-300 mb-1">Buffer Size</label>
+                            <select class="w-full p-2 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                <option value="1000">1,000 packets</option>
+                                <option value="5000">5,000 packets</option>
+                                <option value="10000">10,000 packets</option>
+                                <option value="50000">50,000 packets</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-300 mb-1">Refresh Rate</label>
+                            <select class="w-full p-2 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                <option value="1000">1 second</option>
+                                <option value="2000" selected>2 seconds</option>
+                                <option value="5000">5 seconds</option>
+                                <option value="10000">10 seconds</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="text-md font-semibold text-white mb-3">Alert Settings</h4>
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-slate-300">Security Alerts</span>
+                            <input type="checkbox" checked class="rounded">
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-slate-300">Performance Alerts</span>
+                            <input type="checkbox" checked class="rounded">
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-slate-300">Anomaly Detection</span>
+                            <input type="checkbox" checked class="rounded">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 mt-6">
+                <button id="reset-settings" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm">
+                    Reset to Default
+                </button>
+                <button id="save-settings" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">
+                    Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Application -->
+    <script>
+        class NetSecureProApp {
+            constructor() {
+                this.initializeState();
+                this.initializeElements();
+                this.initializeCharts();
+                this.initializeEventListeners();
+                this.startWebSocketConnection();
+                this.startPeriodicUpdates();
+                this.loadInitialData();
+            }
+
+            initializeState() {
+                // Core application state
+                this.isConnected = false;
+                this.isPaused = false;
+                this.packets = [];
+                this.filteredPackets = [];
+                this.maxPackets = 1000;
+                this.maxDisplayPackets = 100;
+                
+                // Analytics data
+                this.protocolCounts = {};
+                this.ipCounts = {};
+                this.portCounts = {};
+                this.threatCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+                this.trafficHistory = [];
+                this.bandwidthHistory = [];
+                this.latencyHistory = [];
+                
+                // Metrics
+                this.totalPackets = 0;
+                this.packetsPerSecond = 0;
+                this.totalBytes = 0;
+                this.uniqueIPs = new Set();
+                this.avgLatency = 0;
+                this.threatCount = 0;
+                
+                // Filters
+                this.filters = {
+                    protocol: 'all',
+                    ipRange: 'all',
+                    port: 'all',
+                    threat: 'all',
+                    search: '',
+                    timeRange: 'live',
+                    size: 'all'
+                };
+                
+                // Settings
+                this.settings = {
+                    bufferSize: 1000,
+                    refreshRate: 2000,
+                    securityAlerts: true,
+                    performanceAlerts: true,
+                    anomalyDetection: true
+                };
+                
+                // Protocol colors for consistency
+                this.protocolColors = {
+                    'TCP': '#fb923c',
+                    'UDP': '#a855f7',
+                    'HTTP': '#22c55e',
+                    'HTTPS': '#10b981',
+                    'DNS': '#a855f7',
+                    'SSH': '#06b6d4',
+                    'FTP': '#8b5cf6',
+                    'SMTP': '#e11d48',
+                    'ICMP': '#ef4444',
+                    'OTHER': '#64748b'
+                };
+                
+                this.startTime = Date.now();
+            }
+
+            initializeElements() {
+                // Main elements
+                this.packetTableBody = document.getElementById('packet-table-body');
+                this.connectionStatus = document.getElementById('connection-status');
+                this.connectionText = document.getElementById('connection-text');
+                this.currentTime = document.getElementById('current-time');
+                
+                // Metrics
+                this.totalPacketsEl = document.getElementById('total-packets');
+                this.packetsPerSecEl = document.getElementById('packets-per-sec');
+                this.dataVolumeEl = document.getElementById('data-volume');
+                this.uniqueIPsEl = document.getElementById('unique-ips');
+                this.threatCountEl = document.getElementById('threat-count');
+                this.avgLatencyEl = document.getElementById('avg-latency');
+                
+                // Filters
+                this.protocolFilter = document.getElementById('protocol-filter');
+                this.ipRangeFilter = document.getElementById('ip-range-filter');
+                this.portFilter = document.getElementById('port-filter');
+                this.threatFilter = document.getElementById('threat-filter');
+                this.searchInput = document.getElementById('search-input');
+                this.timeRange = document.getElementById('time-range');
+                this.sizeFilter = document.getElementById('size-filter');
+                
+                // Controls
+                this.applyFiltersBtn = document.getElementById('apply-filters');
+                this.clearFiltersBtn = document.getElementById('clear-filters');
+                this.savePresetBtn = document.getElementById('save-preset');
+                this.autoRefresh = document.getElementById('auto-refresh');
+                this.pauseStreamBtn = document.getElementById('pause-stream');
+                this.exportBtn = document.getElementById('export-btn');
+                
+                // Modal elements
+                this.settingsBtn = document.getElementById('settings-btn');
+                this.settingsModal = document.getElementById('settings-modal');
+                this.closeSettings = document.getElementById('close-settings');
+                
+                // Display elements
+                this.visiblePackets = document.getElementById('visible-packets');
+                this.bufferSize = document.getElementById('buffer-size');
+                this.securityAlerts = document.getElementById('security-alerts');
+                this.topTalkers = document.getElementById('top-talkers');
+            }
+
+            initializeCharts() {
+                // Protocol Distribution Chart
+                this.protocolChart = new Chart(document.getElementById('protocol-chart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            backgroundColor: [],
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    color: '#cbd5e1',
+                                    font: { size: 11 },
+                                    padding: 10,
+                                    usePointStyle: true
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Traffic Timeline Chart
+                this.trafficChart = new Chart(document.getElementById('traffic-chart'), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Packets/sec',
+                            data: [],
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { display: false },
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                            }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                // Bandwidth Chart
+                this.bandwidthChart = new Chart(document.getElementById('bandwidth-chart'), {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Bandwidth (Mbps)',
+                            data: [],
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                            borderColor: '#3b82f6',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { display: false },
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                            }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                // Latency Chart
+                this.latencyChart = new Chart(document.getElementById('latency-chart'), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Latency (ms)',
+                            data: [],
+                            borderColor: '#fbbf24',
+                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { display: false },
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                            }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                // Initialize other charts
+                this.initializeAdditionalCharts();
+            }  
+          initializeAdditionalCharts() {
+                // Threat Chart
+                this.threatChart = new Chart(document.getElementById('threat-chart'), {
+                    type: 'radar',
+                    data: {
+                        labels: ['Port Scans', 'DDoS Attempts', 'Malware', 'Intrusions', 'Data Exfil', 'Anomalies'],
+                        datasets: [{
+                            label: 'Threat Level',
+                            data: [0, 0, 0, 0, 0, 0],
+                            backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                            borderColor: '#ef4444',
+                            borderWidth: 2,
+                            pointBackgroundColor: '#ef4444'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            r: {
+                                beginAtZero: true,
+                                max: 10,
+                                ticks: { color: '#94a3b8', font: { size: 8 } },
+                                grid: { color: 'rgba(148, 163, 184, 0.2)' },
+                                pointLabels: { color: '#cbd5e1', font: { size: 10 } }
+                            }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                // Port Chart
+                this.portChart = new Chart(document.getElementById('port-chart'), {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Connections',
+                            data: [],
+                            backgroundColor: 'rgba(249, 115, 22, 0.8)',
+                            borderColor: '#f97316',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                            },
+                            y: { ticks: { color: '#94a3b8', font: { size: 10 } } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                // Geographic Chart
+                this.geoChart = new Chart(document.getElementById('geo-chart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            backgroundColor: ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: '#cbd5e1', font: { size: 10 } }
+                            }
+                        }
+                    }
+                });
+
+                // Packet Size Chart
+                this.packetSizeChart = new Chart(document.getElementById('packet-size-chart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['0-100B', '100B-1KB', '1KB-10KB', '10KB+'],
+                        datasets: [{
+                            label: 'Packet Count',
+                            data: [0, 0, 0, 0],
+                            backgroundColor: 'rgba(168, 85, 247, 0.8)',
+                            borderColor: '#a855f7',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                            },
+                            x: { ticks: { color: '#94a3b8', font: { size: 10 } } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+
+            initializeEventListeners() {
+                // Filter controls
+                this.applyFiltersBtn.addEventListener('click', () => this.applyFilters());
+                this.clearFiltersBtn.addEventListener('click', () => this.clearFilters());
+                this.savePresetBtn.addEventListener('click', () => this.saveFilterPreset());
+                
+                // Stream controls
+                this.pauseStreamBtn.addEventListener('click', () => this.togglePause());
+                this.exportBtn.addEventListener('click', () => this.exportData());
+                
+                // Settings modal
+                this.settingsBtn.addEventListener('click', () => this.showSettings());
+                this.closeSettings.addEventListener('click', () => this.hideSettings());
+                
+                // Real-time search
+                this.searchInput.addEventListener('input', (e) => {
+                    this.filters.search = e.target.value.toLowerCase();
+                    this.applyFilters();
+                });
+                
+                // Filter change handlers
+                [this.protocolFilter, this.ipRangeFilter, this.portFilter, this.threatFilter, this.timeRange, this.sizeFilter].forEach(filter => {
+                    filter.addEventListener('change', () => this.applyFilters());
+                });
+                
+                // Table sorting
+                document.querySelectorAll('[data-sort]').forEach(header => {
+                    header.addEventListener('click', (e) => this.sortTable(e.target.dataset.sort));
+                });
+                
+                // Auto-refresh toggle
+                this.autoRefresh.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        this.startPeriodicUpdates();
+                    } else {
+                        this.stopPeriodicUpdates();
+                    }
+                });
+            }
+
+            startWebSocketConnection() {
+                const hostname = window.location.hostname || 'localhost';
+                const wsUrl = `ws://${hostname}:8765`;
+                
+                console.log(`Attempting to connect to WebSocket at ${wsUrl}`);
+                this.updateConnectionStatus('warning', 'Connecting...');
+                
+                try {
+                    this.socket = new WebSocket(wsUrl);
+                    
+                    this.socket.onopen = () => {
+                        this.isConnected = true;
+                        this.updateConnectionStatus('live', 'Live');
+                        console.log('✅ WebSocket connected successfully to backend');
+                        
+                        // Clear demo data when real connection is established
+                        if (this.packets.length > 0 && this.packets[0].demo) {
+                            this.clearDemoData();
+                        }
+                    };
+                    
+                    this.socket.onmessage = (event) => {
+                        if (!this.isPaused) {
+                            try {
+                                this.processPacketData(event.data);
+                            } catch (error) {
+                                console.error('Error processing WebSocket message:', error);
+                            }
+                        }
+                    };
+                    
+                    this.socket.onclose = (event) => {
+                        this.isConnected = false;
+                        console.log(`WebSocket connection closed (code: ${event.code}, reason: ${event.reason})`);
+                        
+                        if (event.code === 1006) {
+                            this.updateConnectionStatus('critical', 'Backend Offline');
+                            console.log('Backend server appears to be offline. Starting demo mode...');
+                            this.loadDemoData();
+                        } else {
+                            this.updateConnectionStatus('warning', 'Reconnecting...');
+                            console.log('Attempting to reconnect in 5 seconds...');
+                            setTimeout(() => this.startWebSocketConnection(), 5000);
+                        }
+                    };
+                    
+                    this.socket.onerror = (error) => {
+                        this.isConnected = false;
+                        this.updateConnectionStatus('critical', 'Connection Error');
+                        console.error('WebSocket error:', error);
+                    };
+                    
+                    // Set connection timeout
+                    setTimeout(() => {
+                        if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+                            console.log('WebSocket connection timeout, switching to demo mode');
+                            this.socket.close();
+                            this.updateConnectionStatus('warning', 'Demo Mode');
+                            this.loadDemoData();
+                        }
+                    }, 10000); // 10 second timeout
+                    
+                } catch (error) {
+                    console.error('Failed to establish WebSocket connection:', error);
+                    this.updateConnectionStatus('warning', 'Demo Mode');
+                    this.loadDemoData();
+                }
+            }
+
+            clearDemoData() {
+                console.log('Clearing demo data for live connection');
+                this.packets = [];
+                this.filteredPackets = [];
+                this.protocolCounts = {};
+                this.ipCounts = {};
+                this.portCounts = {};
+                this.threatCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+                this.totalPackets = 0;
+                this.totalBytes = 0;
+                this.uniqueIPs.clear();
+                this.threatCount = 0;
+                this.trafficHistory = [];
+                this.latencyHistory = [];
+                
+                // Update displays
+                this.updatePacketTable();
+                this.updateMetrics();
+                this.updateCharts();
+            }
+
+            processPacketData(rawData) {
+                try {
+                    const packetData = JSON.parse(rawData);
+                    
+                    // Handle the backend's packet format
+                    let packet;
+                    
+                    // Check if this is a batch format from your backend
+                    if (packetData.packets && Array.isArray(packetData.packets)) {
+                        // Process each packet in the batch
+                        packetData.packets.forEach(p => this.processSinglePacket(p));
+                        return;
+                    }
+                    
+                    // Handle single packet format
+                    this.processSinglePacket(packetData);
+                    
+                } catch (error) {
+                    console.error('Error processing packet data:', error, rawData);
+                }
+            }
+
+            processSinglePacket(packetData) {
+                try {
+                    // Extract protocol from protocols array
+                    let mainProtocol = 'OTHER';
+                    if (packetData.protocols && Array.isArray(packetData.protocols)) {
+                        const protocols = packetData.protocols.map(p => p.toUpperCase());
+                        
+                        // Priority order for protocol selection
+                        const priority = ['HTTP', 'HTTPS', 'DNS', 'TCP', 'UDP', 'ICMP', 'SSH', 'FTP', 'SMTP'];
+                        for (const p of priority) {
+                            if (protocols.includes(p)) {
+                                mainProtocol = p;
+                                break;
+                            }
+                        }
+                        
+                        // If no priority match, use first protocol
+                        if (mainProtocol === 'OTHER' && protocols.length > 0) {
+                            mainProtocol = protocols[0];
+                        }
+                    } else if (packetData.protocol) {
+                        mainProtocol = packetData.protocol.toUpperCase();
+                    }
+                    
+                    const packet = {
+                        id: packetData.packet_number || ++this.totalPackets,
+                        timestamp: Date.now(),
+                        time: this.formatTime(Date.now() - this.startTime),
+                        src_ip: packetData.source || packetData.src_ip || 'Unknown',
+                        dest_ip: packetData.destination || packetData.dest_ip || 'Unknown',
+                        protocol: mainProtocol,
+                        length: packetData.length || 0,
+                        info: this.generatePacketInfo(packetData, mainProtocol),
+                        src_port: packetData.source_port || packetData.src_port || null,
+                        dest_port: packetData.destination_port || packetData.dest_port || null,
+                        risk_level: this.calculateRiskLevel(packetData),
+                        protocols: packetData.protocols || [],
+                        raw: packetData
+                    };
+                    
+                    this.packets.unshift(packet);
+                    
+                    // Maintain buffer size
+                    if (this.packets.length > this.maxPackets) {
+                        this.packets = this.packets.slice(0, this.maxPackets);
+                    }
+                    
+                    this.updateAnalytics(packet);
+                    this.applyFilters();
+                    
+                } catch (error) {
+                    console.error('Error processing single packet:', error);
+                }
+            }
+
+            generatePacketInfo(packetData, protocol) {
+                // Generate meaningful info based on protocol and available data
+                if (packetData.info) {
+                    return packetData.info;
+                }
+                
+                let info = `${protocol} packet`;
+                
+                // Add port information if available
+                if (packetData.source_port && packetData.destination_port) {
+                    info = `${protocol} ${packetData.source_port} → ${packetData.destination_port}`;
+                }
+                
+                // Add protocol-specific information
+                if (packetData.http_host) {
+                    info = `HTTP ${packetData.http_host}${packetData.http_uri || ''}`;
+                } else if (packetData.dns_query) {
+                    info = `DNS Query ${packetData.dns_query}`;
+                } else if (protocol === 'ICMP') {
+                    info = 'ICMP packet';
+                }
+                
+                return info;
+            }
+
+            calculateRiskLevel(packetData) {
+                let riskScore = 0;
+                
+                // Check for suspicious ports
+                const suspiciousPorts = [23, 135, 139, 445, 1433, 3389, 5900, 4444, 6666, 31337];
+                const destPort = packetData.destination_port || packetData.dest_port;
+                const srcPort = packetData.source_port || packetData.src_port;
+                
+                if (destPort && suspiciousPorts.includes(parseInt(destPort))) {
+                    riskScore += 3;
+                }
+                if (srcPort && suspiciousPorts.includes(parseInt(srcPort))) {
+                    riskScore += 2;
+                }
+                
+                // Check for unusual packet sizes
+                const length = packetData.length || 0;
+                if (length > 9000 || (length > 0 && length < 20)) {
+                    riskScore += 1;
+                }
+                
+                // Check for external IPs
+                const srcIp = packetData.source || packetData.src_ip || '';
+                const destIp = packetData.destination || packetData.dest_ip || '';
+                
+                if (srcIp && !this.isPrivateIP(srcIp)) {
+                    riskScore += 1;
+                }
+                
+                // Check for suspicious protocols
+                const protocols = packetData.protocols || [];
+                if (protocols.some(p => ['TELNET', 'FTP', 'RLOGIN'].includes(p.toUpperCase()))) {
+                    riskScore += 2;
+                }
+                
+                // Check for error conditions
+                if (packetData.error) {
+                    riskScore += 1;
+                }
+                
+                // Check for high-frequency connections (basic heuristic)
+                if (this.ipCounts[srcIp] > 100) {
+                    riskScore += 1;
+                }
+                
+                // Determine risk level
+                if (riskScore >= 5) return 'critical';
+                if (riskScore >= 4) return 'high';
+                if (riskScore >= 2) return 'medium';
+                if (riskScore >= 1) return 'low';
+                return 'info';
+            }
+
+            isPrivateIP(ip) {
+                if (!ip) return false;
+                
+                // Check for private IP ranges
+                return (
+                    ip.startsWith('192.168.') ||
+                    ip.startsWith('10.') ||
+                    ip.startsWith('172.16.') ||
+                    ip.startsWith('172.17.') ||
+                    ip.startsWith('172.18.') ||
+                    ip.startsWith('172.19.') ||
+                    ip.startsWith('172.20.') ||
+                    ip.startsWith('172.21.') ||
+                    ip.startsWith('172.22.') ||
+                    ip.startsWith('172.23.') ||
+                    ip.startsWith('172.24.') ||
+                    ip.startsWith('172.25.') ||
+                    ip.startsWith('172.26.') ||
+                    ip.startsWith('172.27.') ||
+                    ip.startsWith('172.28.') ||
+                    ip.startsWith('172.29.') ||
+                    ip.startsWith('172.30.') ||
+                    ip.startsWith('172.31.') ||
+                    ip.startsWith('127.') ||
+                    ip.startsWith('169.254.')
+                );
+            }
+
+            updateAnalytics(packet) {
+                // Protocol counts
+                this.protocolCounts[packet.protocol] = (this.protocolCounts[packet.protocol] || 0) + 1;
+                
+                // IP tracking
+                this.uniqueIPs.add(packet.src_ip);
+                this.uniqueIPs.add(packet.dest_ip);
+                this.ipCounts[packet.src_ip] = (this.ipCounts[packet.src_ip] || 0) + 1;
+                
+                // Port tracking
+                if (packet.dest_port) {
+                    this.portCounts[packet.dest_port] = (this.portCounts[packet.dest_port] || 0) + 1;
+                }
+                
+                // Threat tracking
+                this.threatCounts[packet.risk_level]++;
+                if (packet.risk_level === 'critical' || packet.risk_level === 'high') {
+                    this.threatCount++;
+                }
+                
+                // Bandwidth tracking
+                this.totalBytes += packet.length;
+                
+                // Update traffic history
+                const now = Date.now();
+                if (this.trafficHistory.length === 0 || now - this.trafficHistory[this.trafficHistory.length - 1].time > 1000) {
+                    this.trafficHistory.push({
+                        time: now,
+                        packets: 1,
+                        bytes: packet.length
+                    });
+                    
+                    if (this.trafficHistory.length > 60) {
+                        this.trafficHistory.shift();
+                    }
+                } else {
+                    const last = this.trafficHistory[this.trafficHistory.length - 1];
+                    last.packets++;
+                    last.bytes += packet.length;
+                }
+                
+                // Calculate packets per second
+                if (this.trafficHistory.length >= 2) {
+                    const recent = this.trafficHistory.slice(-5);
+                    this.packetsPerSecond = Math.round(recent.reduce((sum, h) => sum + h.packets, 0) / recent.length);
+                }
+                
+                // Simulate latency data
+                this.latencyHistory.push({
+                    time: now,
+                    latency: Math.random() * 50 + 10
+                });
+                
+                if (this.latencyHistory.length > 60) {
+                    this.latencyHistory.shift();
+                }
+                
+                this.avgLatency = Math.round(this.latencyHistory.reduce((sum, h) => sum + h.latency, 0) / this.latencyHistory.length);
+            }     
+       applyFilters() {
+                let filtered = [...this.packets];
+                
+                // Protocol filter
+                if (this.filters.protocol !== 'all') {
+                    filtered = filtered.filter(p => p.protocol.toLowerCase() === this.filters.protocol);
+                }
+                
+                // IP range filter
+                if (this.filters.ipRange !== 'all') {
+                    filtered = filtered.filter(p => {
+                        switch (this.filters.ipRange) {
+                            case 'internal':
+                                return p.src_ip.startsWith('192.168.') || p.src_ip.startsWith('10.');
+                            case 'external':
+                                return !p.src_ip.startsWith('192.168.') && !p.src_ip.startsWith('10.');
+                            case 'private':
+                                return p.src_ip.startsWith('192.168.') || p.src_ip.startsWith('10.') || p.src_ip.startsWith('172.');
+                            case 'public':
+                                return !p.src_ip.startsWith('192.168.') && !p.src_ip.startsWith('10.') && !p.src_ip.startsWith('172.');
+                            default:
+                                return true;
+                        }
+                    });
+                }
+                
+                // Port filter
+                if (this.filters.port !== 'all') {
+                    filtered = filtered.filter(p => {
+                        const port = p.dest_port || 0;
+                        switch (this.filters.port) {
+                            case 'well-known':
+                                return port >= 1 && port <= 1023;
+                            case 'registered':
+                                return port >= 1024 && port <= 49151;
+                            case 'dynamic':
+                                return port >= 49152 && port <= 65535;
+                            case 'web':
+                                return [80, 443, 8080, 8443].includes(port);
+                            case 'mail':
+                                return [25, 110, 143, 993, 995].includes(port);
+                            case 'database':
+                                return [3306, 5432, 1521, 1433].includes(port);
+                            default:
+                                return true;
+                        }
+                    });
+                }
+                
+                // Threat level filter
+                if (this.filters.threat !== 'all') {
+                    filtered = filtered.filter(p => p.risk_level === this.filters.threat);
+                }
+                
+                // Size filter
+                if (this.filters.size !== 'all') {
+                    filtered = filtered.filter(p => {
+                        switch (this.filters.size) {
+                            case 'small':
+                                return p.length < 100;
+                            case 'medium':
+                                return p.length >= 100 && p.length <= 1500;
+                            case 'large':
+                                return p.length > 1500 && p.length <= 9000;
+                            case 'jumbo':
+                                return p.length > 9000;
+                            default:
+                                return true;
+                        }
+                    });
+                }
+                
+                // Search filter
+                if (this.filters.search) {
+                    const search = this.filters.search.toLowerCase();
+                    filtered = filtered.filter(p =>
+                        p.src_ip.toLowerCase().includes(search) ||
+                        p.dest_ip.toLowerCase().includes(search) ||
+                        p.protocol.toLowerCase().includes(search) ||
+                        p.info.toLowerCase().includes(search) ||
+                        (p.src_port && p.src_port.toString().includes(search)) ||
+                        (p.dest_port && p.dest_port.toString().includes(search))
+                    );
+                }
+                
+                // Time range filter
+                if (this.filters.timeRange !== 'live') {
+                    const now = Date.now();
+                    const timeRanges = {
+                        '1m': 60 * 1000,
+                        '5m': 5 * 60 * 1000,
+                        '15m': 15 * 60 * 1000,
+                        '1h': 60 * 60 * 1000,
+                        '24h': 24 * 60 * 60 * 1000
+                    };
+                    
+                    const range = timeRanges[this.filters.timeRange];
+                    if (range) {
+                        filtered = filtered.filter(p => now - p.timestamp <= range);
+                    }
+                }
+                
+                this.filteredPackets = filtered.slice(0, this.maxDisplayPackets);
+                this.updatePacketTable();
+                this.updateDisplayCounts();
+            }
+
+            updatePacketTable() {
+                const tbody = this.packetTableBody;
+                tbody.innerHTML = '';
+                
+                this.filteredPackets.forEach(packet => {
+                    const row = this.createPacketRow(packet);
+                    tbody.appendChild(row);
+                });
+            }
+
+            createPacketRow(packet) {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-700/50 transition-colors cursor-pointer';
+                
+                const protocolClass = `protocol-${packet.protocol.toLowerCase()}`;
+                const riskColor = {
+                    'critical': 'text-red-400',
+                    'high': 'text-orange-400',
+                    'medium': 'text-yellow-400',
+                    'low': 'text-blue-400',
+                    'info': 'text-slate-400'
+                }[packet.risk_level];
+                
+                row.innerHTML = `
+                    <td class="p-3 text-slate-400 font-mono text-xs">${packet.id}</td>
+                    <td class="p-3 text-slate-300 font-mono text-xs">${packet.time}</td>
+                    <td class="p-3 font-mono text-xs text-slate-300">${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''}</td>
+                    <td class="p-3 font-mono text-xs text-slate-300">${packet.dest_ip}${packet.dest_port ? ':' + packet.dest_port : ''}</td>
+                    <td class="p-3"><span class="px-2 py-1 text-xs font-medium rounded-full text-white ${protocolClass}">${packet.protocol}</span></td>
+                    <td class="p-3 text-slate-400 text-xs">${this.formatBytes(packet.length)}</td>
+                    <td class="p-3 text-slate-300 text-xs truncate max-w-xs" title="${packet.info}">${packet.info}</td>
+                    <td class="p-3"><span class="px-2 py-1 text-xs font-medium rounded ${riskColor} bg-slate-700">${packet.risk_level.toUpperCase()}</span></td>
+                `;
+                
+                // Add click handler for packet details
+                row.addEventListener('click', () => this.showPacketDetails(packet));
+                
+                return row;
+            }
+
+            updateDisplayCounts() {
+                this.visiblePackets.textContent = this.filteredPackets.length;
+                this.bufferSize.textContent = this.maxPackets.toLocaleString();
+            }
+
+            updateMetrics() {
+                this.totalPacketsEl.textContent = this.totalPackets.toLocaleString();
+                this.packetsPerSecEl.textContent = this.packetsPerSecond;
+                this.dataVolumeEl.textContent = this.formatBytes(this.totalBytes);
+                this.uniqueIPsEl.textContent = this.uniqueIPs.size;
+                this.threatCountEl.textContent = this.threatCount;
+                this.avgLatencyEl.textContent = this.avgLatency + 'ms';
+            }
+
+            updateCharts() {
+                // Protocol Chart
+                const protocols = Object.keys(this.protocolCounts);
+                const counts = Object.values(this.protocolCounts);
+                const colors = protocols.map(p => this.protocolColors[p] || this.protocolColors['OTHER']);
+                
+                this.protocolChart.data.labels = protocols;
+                this.protocolChart.data.datasets[0].data = counts;
+                this.protocolChart.data.datasets[0].backgroundColor = colors;
+                this.protocolChart.update('none');
+                
+                // Traffic Chart
+                const trafficLabels = this.trafficHistory.map((_, i) => i);
+                const trafficData = this.trafficHistory.map(h => h.packets);
+                
+                this.trafficChart.data.labels = trafficLabels;
+                this.trafficChart.data.datasets[0].data = trafficData;
+                this.trafficChart.update('none');
+                
+                // Bandwidth Chart
+                const bandwidthLabels = this.trafficHistory.slice(-10).map((_, i) => `${i}s`);
+                const bandwidthData = this.trafficHistory.slice(-10).map(h => (h.bytes / 1024 / 1024).toFixed(2));
+                
+                this.bandwidthChart.data.labels = bandwidthLabels;
+                this.bandwidthChart.data.datasets[0].data = bandwidthData;
+                this.bandwidthChart.update('none');
+                
+                // Latency Chart
+                const latencyLabels = this.latencyHistory.map((_, i) => i);
+                const latencyData = this.latencyHistory.map(h => h.latency);
+                
+                this.latencyChart.data.labels = latencyLabels;
+                this.latencyChart.data.datasets[0].data = latencyData;
+                this.latencyChart.update('none');
+                
+                // Update other charts
+                this.updateAdditionalChartsData();
+            }
+
+            updateAdditionalChartsData() {
+                // Threat Chart
+                const threatData = [
+                    this.threatCounts.critical * 2,
+                    this.threatCounts.high * 1.5,
+                    this.threatCounts.medium,
+                    this.threatCounts.low * 0.5,
+                    Math.floor(Math.random() * 3),
+                    this.threatCounts.critical + this.threatCounts.high
+                ];
+                
+                this.threatChart.data.datasets[0].data = threatData;
+                this.threatChart.update('none');
+                
+                // Port Chart
+                const topPorts = Object.entries(this.portCounts)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5);
+                
+                this.portChart.data.labels = topPorts.map(([port]) => `Port ${port}`);
+                this.portChart.data.datasets[0].data = topPorts.map(([,count]) => count);
+                this.portChart.update('none');
+                
+                // Geographic Chart (simulated)
+                this.geoChart.data.labels = ['North America', 'Europe', 'Asia', 'Others'];
+                this.geoChart.data.datasets[0].data = [45, 30, 20, 5];
+                this.geoChart.update('none');
+                
+                // Packet Size Chart
+                const sizeBuckets = [0, 0, 0, 0];
+                this.packets.forEach(packet => {
+                    if (packet.length < 100) sizeBuckets[0]++;
+                    else if (packet.length <= 1000) sizeBuckets[1]++;
+                    else if (packet.length <= 10000) sizeBuckets[2]++;
+                    else sizeBuckets[3]++;
+                });
+                
+                this.packetSizeChart.data.datasets[0].data = sizeBuckets;
+                this.packetSizeChart.update('none');
+            }
+
+            updateSecurityAlerts() {
+                const alerts = this.packets
+                    .filter(p => p.risk_level === 'critical' || p.risk_level === 'high')
+                    .slice(0, 5)
+                    .map(packet => ({
+                        level: packet.risk_level,
+                        message: `${packet.risk_level.toUpperCase()} risk detected from ${packet.src_ip}`,
+                        time: packet.time,
+                        protocol: packet.protocol
+                    }));
+                
+                const html = alerts.map(alert => `
+                    <div class="p-2 rounded-lg border-l-4 ${alert.level === 'critical' ? 'border-red-500 bg-red-900/20' : 'border-orange-500 bg-orange-900/20'}">
+                        <div class="flex justify-between items-start">
+                            <div class="text-xs ${alert.level === 'critical' ? 'text-red-300' : 'text-orange-300'}">${alert.message}</div>
+                            <div class="text-xs text-slate-400">${alert.time}</div>
+                        </div>
+                        <div class="text-xs text-slate-400 mt-1">${alert.protocol} Protocol</div>
+                    </div>
+                `).join('');
+                
+                this.securityAlerts.innerHTML = html || '<div class="text-sm text-slate-400 text-center py-4">No security alerts</div>';
+            }
+
+            updateTopTalkers() {
+                const topTalkers = Object.entries(this.ipCounts)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5);
+                
+                const html = topTalkers.map(([ip, count]) => {
+                    const percentage = ((count / this.totalPackets) * 100).toFixed(1);
+                    return `
+                        <div class="flex justify-between items-center p-2 bg-slate-700/30 rounded-lg">
+                            <div>
+                                <div class="font-mono text-sm text-white">${ip}</div>
+                                <div class="text-xs text-slate-400">${count} packets (${percentage}%)</div>
+                            </div>
+                            <div class="w-16 h-2 bg-slate-600 rounded-full">
+                                <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full" 
+                                     style="width: ${Math.min(percentage * 2, 100)}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                this.topTalkers.innerHTML = html || '<div class="text-sm text-slate-400 text-center py-4">No data available</div>';
+            }  
+          // Control Methods
+            togglePause() {
+                this.isPaused = !this.isPaused;
+                this.pauseStreamBtn.innerHTML = this.isPaused 
+                    ? '<i class="fas fa-play mr-1"></i>Resume'
+                    : '<i class="fas fa-pause mr-1"></i>Pause';
+                
+                this.updateConnectionStatus(
+                    this.isPaused ? 'warning' : 'live',
+                    this.isPaused ? 'Paused' : 'Live'
+                );
+            }
+
+            clearFilters() {
+                this.filters = {
+                    protocol: 'all',
+                    ipRange: 'all',
+                    port: 'all',
+                    threat: 'all',
+                    search: '',
+                    timeRange: 'live',
+                    size: 'all'
+                };
+                
+                // Reset UI elements
+                this.protocolFilter.value = 'all';
+                this.ipRangeFilter.value = 'all';
+                this.portFilter.value = 'all';
+                this.threatFilter.value = 'all';
+                this.searchInput.value = '';
+                this.timeRange.value = 'live';
+                this.sizeFilter.value = 'all';
+                
+                this.applyFilters();
+            }
+
+            saveFilterPreset() {
+                const preset = {
+                    name: prompt('Enter preset name:'),
+                    filters: { ...this.filters }
+                };
+                
+                if (preset.name) {
+                    const presets = JSON.parse(localStorage.getItem('netSecurePresets') || '[]');
+                    presets.push(preset);
+                    localStorage.setItem('netSecurePresets', JSON.stringify(presets));
+                    alert('Filter preset saved successfully!');
+                }
+            }
+
+            exportData() {
+                const data = {
+                    packets: this.filteredPackets.slice(0, 1000),
+                    summary: {
+                        totalPackets: this.totalPackets,
+                        uniqueIPs: this.uniqueIPs.size,
+                        protocolDistribution: this.protocolCounts,
+                        threatSummary: this.threatCounts,
+                        exportTime: new Date().toISOString(),
+                        timeRange: `${this.formatTime(0)} - ${this.formatTime(Date.now() - this.startTime)}`
+                    },
+                    filters: this.filters
+                };
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `netsecure-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            showSettings() {
+                this.settingsModal.classList.remove('hidden');
+            }
+
+            hideSettings() {
+                this.settingsModal.classList.add('hidden');
+            }
+
+            showPacketDetails(packet) {
+                const details = `
+                    Packet ID: ${packet.id}
+                    Time: ${packet.time}
+                    Source: ${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''}
+                    Destination: ${packet.dest_ip}${packet.dest_port ? ':' + packet.dest_port : ''}
+                    Protocol: ${packet.protocol}
+                    Length: ${this.formatBytes(packet.length)}
+                    Risk Level: ${packet.risk_level.toUpperCase()}
+                    Info: ${packet.info}
+                `;
+                alert(details);
+            }
+
+            sortTable(column) {
+                // Implement table sorting logic
+                console.log('Sorting by:', column);
+            }
+
+            // Periodic Updates
+            startPeriodicUpdates() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                }
+                
+                this.updateInterval = setInterval(() => {
+                    if (this.autoRefresh.checked) {
+                        this.updateMetrics();
+                        this.updateCharts();
+                        this.updateSecurityAlerts();
+                        this.updateTopTalkers();
+                        this.updateCurrentTime();
+                    }
+                }, this.settings.refreshRate);
+            }
+
+            stopPeriodicUpdates() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                    this.updateInterval = null;
+                }
+            }
+
+            updateCurrentTime() {
+                this.currentTime.textContent = new Date().toLocaleTimeString();
+            }
+
+            updateConnectionStatus(status, text) {
+                this.connectionStatus.className = `w-3 h-3 rounded-full status-${status}`;
+                this.connectionText.textContent = text;
+                this.connectionText.className = `text-sm font-medium ${
+                    status === 'live' ? 'text-green-400' : 
+                    status === 'warning' ? 'text-yellow-400' : 
+                    status === 'critical' ? 'text-red-400' : 'text-slate-400'
+                }`;
+                
+                // Update data source indicator if it exists
+                const dataSource = document.getElementById('data-source');
+                if (dataSource) {
+                    if (status === 'live') {
+                        dataSource.textContent = 'Live Data';
+                        dataSource.className = 'text-green-400';
+                    } else if (status === 'warning' && text === 'Demo Mode') {
+                        dataSource.textContent = 'Demo Data';
+                        dataSource.className = 'text-yellow-400';
+                    } else {
+                        dataSource.textContent = text;
+                        dataSource.className = 'text-slate-400';
+                    }
+                }
+            }
+
+            // Demo Data for Testing
+            loadDemoData() {
+                console.log('📊 Loading demo data - Backend not available');
+                
+                // Generate realistic demo packets
+                const protocols = ['TCP', 'UDP', 'HTTP', 'HTTPS', 'DNS', 'SSH', 'ICMP'];
+                const internalIPs = ['192.168.1.100', '192.168.1.101', '192.168.1.102', '10.0.0.1', '172.16.0.1'];
+                const externalIPs = ['8.8.8.8', '1.1.1.1', '172.217.14.142', '151.101.193.140', '13.107.42.14'];
+                const commonPorts = [80, 443, 53, 22, 21, 25, 110, 143, 993, 995];
+                const suspiciousPorts = [23, 135, 139, 445, 1433, 3389];
+                
+                // Generate 75 demo packets with realistic patterns
+                for (let i = 0; i < 75; i++) {
+                    const isOutbound = Math.random() > 0.4;
+                    const srcIP = isOutbound ? 
+                        internalIPs[Math.floor(Math.random() * internalIPs.length)] :
+                        externalIPs[Math.floor(Math.random() * externalIPs.length)];
+                    const destIP = isOutbound ?
+                        externalIPs[Math.floor(Math.random() * externalIPs.length)] :
+                        internalIPs[Math.floor(Math.random() * internalIPs.length)];
+                    
+                    const protocol = protocols[Math.floor(Math.random() * protocols.length)];
+                    const isSuspicious = Math.random() > 0.85;
+                    const destPort = isSuspicious ?
+                        suspiciousPorts[Math.floor(Math.random() * suspiciousPorts.length)] :
+                        commonPorts[Math.floor(Math.random() * commonPorts.length)];
+                    
+                    const packet = {
+                        id: ++this.totalPackets,
+                        timestamp: Date.now() - Math.random() * 600000, // Last 10 minutes
+                        time: this.formatTime(Math.random() * 600000),
+                        src_ip: srcIP,
+                        dest_ip: destIP,
+                        protocol: protocol,
+                        length: this.generateRealisticPacketSize(protocol),
+                        info: this.generateDemoPacketInfo(protocol, srcIP, destIP, destPort),
+                        src_port: Math.floor(Math.random() * 65535) + 1024,
+                        dest_port: destPort,
+                        risk_level: isSuspicious ? 
+                            ['high', 'critical'][Math.floor(Math.random() * 2)] :
+                            ['info', 'low', 'medium'][Math.floor(Math.random() * 3)],
+                        protocols: [protocol],
+                        raw: { demo: true },
+                        demo: true
+                    };
+                    
+                    this.packets.unshift(packet);
+                    this.updateAnalytics(packet);
+                }
+                
+                console.log(`📊 Generated ${this.packets.length} demo packets`);
+                this.applyFilters();
+                this.updateConnectionStatus('warning', 'Demo Mode');
+            }
+
+            generateRealisticPacketSize(protocol) {
+                switch (protocol) {
+                    case 'DNS':
+                        return Math.floor(Math.random() * 200) + 50;
+                    case 'HTTP':
+                        return Math.floor(Math.random() * 1200) + 300;
+                    case 'HTTPS':
+                        return Math.floor(Math.random() * 1400) + 200;
+                    case 'TCP':
+                        return Math.floor(Math.random() * 1500) + 64;
+                    case 'UDP':
+                        return Math.floor(Math.random() * 800) + 64;
+                    case 'ICMP':
+                        return Math.floor(Math.random() * 100) + 28;
+                    case 'SSH':
+                        return Math.floor(Math.random() * 200) + 100;
+                    default:
+                        return Math.floor(Math.random() * 1500) + 64;
+                }
+            }
+
+            generateDemoPacketInfo(protocol, srcIP, destIP, destPort) {
+                const isInternal = this.isPrivateIP(srcIP);
+                
+                switch (protocol) {
+                    case 'HTTP':
+                        return `HTTP GET ${isInternal ? 'outbound' : 'inbound'} request`;
+                    case 'HTTPS':
+                        return `HTTPS ${isInternal ? 'outbound' : 'inbound'} encrypted traffic`;
+                    case 'DNS':
+                        return `DNS query ${isInternal ? 'to' : 'from'} resolver`;
+                    case 'SSH':
+                        return `SSH ${isInternal ? 'outbound' : 'inbound'} connection`;
+                    case 'TCP':
+                        return `TCP ${isInternal ? 'outbound' : 'inbound'} to port ${destPort}`;
+                    case 'UDP':
+                        return `UDP ${isInternal ? 'outbound' : 'inbound'} to port ${destPort}`;
+                    case 'ICMP':
+                        return `ICMP ${isInternal ? 'ping' : 'response'}`;
+                    default:
+                        return `${protocol} ${isInternal ? 'outbound' : 'inbound'} traffic`;
+                }
+            }
+
+            loadInitialData() {
+                // Show connection status
+                console.log('🔌 NetVisor Dashboard initialized');
+                console.log('🔍 Attempting to connect to backend...');
+                
+                // Initialize with demo data after a delay if no real connection
+                setTimeout(() => {
+                    if (this.packets.length === 0 && !this.isConnected) {
+                        console.log('⚠️  No backend connection detected, loading demo data');
+                        this.loadDemoData();
+                    }
+                }, 3000);
+            }
+
+            // Utility Methods
+            formatTime(ms) {
+                return (ms / 1000).toFixed(3) + 's';
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+        }
+
+        // Initialize Application
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                window.netSecureApp = new NetSecureProApp();
+                console.log('NetVisor initialized successfully');
+            } catch (error) {
+                console.error('Failed to initialize NetVisor:', error);
+                document.body.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center bg-slate-900">
+                        <div class="text-center text-white">
+                            <h1 class="text-2xl font-bold mb-4">Application Error</h1>
+                            <p class="text-slate-400">Failed to initialize NetVisor. Please refresh the page.</p>
+                            <p class="text-slate-500 text-sm mt-2">Error: ${error.message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
